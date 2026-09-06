@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-reality-check"
+version = "0.1.0"
+description = "Checks whether an MCP server's successful tool responses actually reflect reality: no disguised refusals, no empty content, no output that ignores the schema it declared."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0",
+    "jsonschema>=4.0",
+]
+
+[project.scripts]
+mcp-reality-check = "mcp_reality_check.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mcp_reality_check"]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
