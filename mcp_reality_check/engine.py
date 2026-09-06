@@ -163,8 +163,8 @@ async def run_reality_check(
             input_strings = string_argument_values(arguments)
             sanity.echo_mismatch_inputs = check_echo_mismatch(response_text, input_strings)
 
-            output_schema = getattr(tool, "outputSchema", None) or getattr(tool, "output_schema", None)
-            structured = getattr(result, "structuredContent", None) or getattr(result, "structured_content", None)
+            output_schema = _field(tool, "output_schema", "outputSchema")
+            structured = _field(result, "structured_content", "structuredContent")
             sanity.schema_violation = check_output_schema(structured, output_schema)
         else:
             # A call that the server itself flags as an error has nothing

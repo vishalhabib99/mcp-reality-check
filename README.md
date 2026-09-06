@@ -43,6 +43,18 @@ mcp-reality-check --json -- python server.py
 mcp-reality-check --fail-under 90 -- python server.py   # non-zero exit if sanity < 90%
 ```
 
+## Real-world spot check
+
+| Repo | Lang | What mcp-reality-check found |
+|---|---|---|
+| [`modelcontextprotocol/server-everything`](https://github.com/modelcontextprotocol/servers/tree/main/src/everything) | TS | Official reference server, run via `npx`. Clean pass — 9/9 checkable tools, 100%/A. Includes `get-structured-content`, which declares a real `outputSchema` — confirmed the schema-validation check is actually exercised, not silently a no-op: read both the tool's declared schema and its live `structuredContent` directly off the wire before trusting the clean result. |
+| [`haris-musa/excel-mcp-server`](https://github.com/haris-musa/excel-mcp-server) | Python | Clean pass — 4/4 checkable tools, 100%/A. 19 write tools correctly skipped as not read-only. |
+| [`modelcontextprotocol/server-fetch`](https://pypi.org/project/mcp-server-fetch/) | Python | Clean pass, tested with `--include-destructive` (its one tool is genuinely read-only but isn't annotated as such) — 1/1, 100%/A, a real HTTP GET against a real URL. |
+| [`upstash/context7-mcp`](https://github.com/upstash/context7) | TS | Clean pass — 2/2, 100%/A. |
+| [`czlonkowski/n8n-mcp`](https://github.com/czlonkowski/n8n-mcp) | TS | Clean pass — 4/4 checkable tools, 100%/A. 3 more tools correctly recognized as honest `isError: true` failures rather than checked/flagged. |
+
+No disguised refusals or output-schema violations found yet in this first round — an honest "nothing yet" is itself worth stating plainly rather than papering over with the echo-mismatch notes (which are real, but explicitly not a confirmed bug — see above).
+
 ## Known limitations
 
 - The refusal-pattern list is a fixed set of common phrasings, not exhaustive — a model-specific or oddly-worded refusal can slip through uncaught. Patterns are deliberately conservative (full phrases, not single words like "sorry") to avoid false-flagging a genuine answer that happens to apologize for something unrelated.
