@@ -47,6 +47,36 @@ def test_id_hint_still_matches_a_real_id_property():
     assert args["user_id"] == "example-id-123"
 
 
+def test_timezone_hint_produces_a_real_iana_name():
+    # Found via real dogfooding against mcp-server-time: no "timezone" hint
+    # existed at all, so `timezone`/`source_timezone`/`target_timezone`
+    # fell back to a bare "example timezone" string — not a valid IANA
+    # name, so every single call errored out with "Invalid timezone" and
+    # there was nothing left to sanity-check. A generic fallback failing
+    # this hard on a real, common property name is exactly the kind of gap
+    # this generator exists to close.
+    schema = {
+        "type": "object",
+        "properties": {
+            "timezone": {"type": "string"},
+            "source_timezone": {"type": "string"},
+            "target_timezone": {"type": "string"},
+        },
+        "required": ["timezone", "source_timezone", "target_timezone"],
+    }
+    import zoneinfo
+
+    args = generate_realistic_arguments(schema)
+    for value in args.values():
+        zoneinfo.ZoneInfo(value)  # raises if not a real IANA timezone name
+
+
+def test_time_hint_matches_common_hh_mm_convention():
+    schema = {"type": "object", "properties": {"time": {"type": "string"}}, "required": ["time"]}
+    args = generate_realistic_arguments(schema)
+    assert args["time"] == "12:00"
+
+
 def test_respects_enum_and_const():
     schema = {
         "type": "object",
