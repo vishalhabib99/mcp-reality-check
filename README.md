@@ -52,8 +52,15 @@ mcp-reality-check --fail-under 90 -- python server.py   # non-zero exit if sanit
 | [`modelcontextprotocol/server-fetch`](https://pypi.org/project/mcp-server-fetch/) | Python | Clean pass, tested with `--include-destructive` (its one tool is genuinely read-only but isn't annotated as such) — 1/1, 100%/A, a real HTTP GET against a real URL. |
 | [`upstash/context7-mcp`](https://github.com/upstash/context7) | TS | Clean pass — 2/2, 100%/A. |
 | [`czlonkowski/n8n-mcp`](https://github.com/czlonkowski/n8n-mcp) | TS | Clean pass — 4/4 checkable tools, 100%/A. 3 more tools correctly recognized as honest `isError: true` failures rather than checked/flagged. |
+| [`modelcontextprotocol/server-time`](https://pypi.org/project/mcp-server-time/) | Python | **Found a real bug in mcp-reality-check itself, not the target.** No `timezone` hint existed in the input generator at all, so `timezone`/`source_timezone`/`target_timezone` fell back to a bare "example timezone" string — not a valid IANA name. Every call errored ("Invalid timezone"), leaving 0/2 checkable. Fixed by adding a real IANA name (`America/New_York`) as the hint; also tightened the `time` hint to `HH:MM`, the format every real time-tool schema documents. Re-verified: 2/2 checkable, 100%/A. |
+| [`modelcontextprotocol/server-sqlite`](https://pypi.org/project/mcp-server-sqlite/) | Python | Clean pass, tested with `--include-destructive` against a throwaway local db file — 6/6, 100%/A. |
+| [`modelcontextprotocol/server-memory`](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) | TS | Clean pass — 3/3 checkable tools, 100%/A. 6 mutating tools correctly skipped as not read-only. |
+| [`mendableai/firecrawl-mcp-server`](https://github.com/mendableai/firecrawl-mcp-server) | TS | Run keyless (no API key) — most tools correctly report an honest `isError: true` since they need a key; the one free tool, `firecrawl_search`, passed cleanly (1/1, 100%/A). |
+| [`wonderwhy-er/DesktopCommanderMCP`](https://github.com/wonderwhy-er/DesktopCommanderMCP) | TS | Clean pass — 8/8 checkable tools, 100%/A. 12 write/process-control tools correctly skipped as not read-only, exactly the kind of server this default exists to protect against. |
+| [`modelcontextprotocol/server-git`](https://pypi.org/project/mcp-server-git/) | Python | 0/7 checkable — every call honestly errored, but for a reason no schema-only generator can fix: the server is configured against one fixed, specific repository path, and no property name or type in the schema signals that constraint. A real, inherent boundary of realistic-input generation, not a bug — documented below rather than forced. |
+| [`qdrant/mcp-server-qdrant`](https://github.com/qdrant/mcp-server-qdrant) | Python | 0/2 checkable — reproduces the same `AsyncQdrantClient` embedded-local-storage-mode limitation already documented from `mcp-fuzz` dogfooding; not a new finding. |
 
-No disguised refusals or output-schema violations found yet in this first round — an honest "nothing yet" is itself worth stating plainly rather than papering over with the echo-mismatch notes (which are real, but explicitly not a confirmed bug — see above).
+No disguised refusals or output-schema violations found yet in real target servers — an honest "nothing yet" is itself worth stating plainly rather than papering over with the echo-mismatch notes (which are real, but explicitly not a confirmed bug — see above). The one real bug found so far (the timezone hint) was in mcp-reality-check's own input generator, not in any target.
 
 ## Known limitations
 
@@ -61,6 +68,7 @@ No disguised refusals or output-schema violations found yet in this first round 
 - The echo/relevance check is a substring match, not semantic understanding — it can't tell a correct paraphrase from an actually-wrong answer. That's exactly why it's reported separately and never scored.
 - Output schema validation only fires when a server actually declares one — most MCP servers today don't yet.
 - No true semantic correctness judgment (an LLM reading the response and deciding if it's *right*) — a deliberate scope decision, not an oversight. If this ever becomes an opt-in mode, it'll need its own API key and will be documented as non-deterministic, unlike everything else here.
+- The input generator only has schema and property names to work with, not server-side configuration state. A server whose valid input depends on something outside its own schema (`mcp-server-git`'s single fixed configured repository path, an id that must reference a record the server was already seeded with) will legitimately reject every realistic-looking call — real, honest `isError: true` results, not a bug in either side, just outside what a schema-only generator can ever know to supply.
 
 ## License
 
