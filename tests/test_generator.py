@@ -125,6 +125,35 @@ def test_no_schema_returns_empty_arguments():
     assert generate_realistic_arguments({}) == {}
 
 
+# Adversarial/malformed metadata: a target server's `tools/list` response
+# isn't guaranteed well-formed, and this module checking that server should
+# never itself crash on the server's own broken schema.
+
+def test_non_dict_top_level_schema_returns_empty_arguments():
+    for schema in (["not", "a", "schema"], "garbage", 42):
+        assert generate_realistic_arguments(schema) == {}
+
+
+def test_non_dict_properties_returns_empty_arguments():
+    for properties in (["not", "a", "dict"], "garbage", 42):
+        schema = {"type": "object", "properties": properties, "required": ["x"]}
+        assert generate_realistic_arguments(schema) == {}
+
+
+def test_non_list_required_is_treated_as_nothing_required():
+    schema = {"type": "object", "properties": {"x": {"type": "string"}}, "required": "x"}
+    assert generate_realistic_arguments(schema) == {}
+
+
+def test_deeply_nested_schema_does_not_blow_recursion_limit():
+    schema: dict = {"type": "string"}
+    for _ in range(5000):
+        schema = {"type": "object", "properties": {"x": schema}, "required": ["x"]}
+    # No assertion on the exact value beyond the depth cutoff — the point is
+    # that generation terminates instead of raising RecursionError.
+    generate_realistic_arguments(schema)
+
+
 def test_string_argument_values_flattens_and_filters_short_values():
     args = {"city": "Paris", "count": 3, "tags": ["ok", "example thing"], "nested": {"x": "Berlin"}}
     values = string_argument_values(args)
