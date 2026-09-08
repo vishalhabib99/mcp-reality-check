@@ -61,7 +61,11 @@ mcp-reality-check --fail-under 90 -- python server.py   # non-zero exit if sanit
 | [`qdrant/mcp-server-qdrant`](https://github.com/qdrant/mcp-server-qdrant) | Python | 0/2 checkable — reproduces the same `AsyncQdrantClient` embedded-local-storage-mode limitation already documented from `mcp-fuzz` dogfooding; not a new finding. |
 | [`modelcontextprotocol/server-sequential-thinking`](https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking) | TS | Official reference server, run via `npx`, no credentials needed. Clean pass — 1/1 checkable tool, 100%/A. |
 
-No disguised refusals or output-schema violations found yet in real target servers — an honest "nothing yet" is itself worth stating plainly rather than papering over with the echo-mismatch notes (which are real, but explicitly not a confirmed bug — see above). The one real bug found so far (the timezone hint) was in mcp-reality-check's own input generator, not in any target.
+No disguised refusals or output-schema violations found yet in real target servers — an honest "nothing yet" is itself worth stating plainly rather than papering over with the echo-mismatch notes (which are real, but explicitly not a confirmed bug — see above). The one real bug found so far in a real target (the timezone hint) was in mcp-reality-check's own input generator, not in any target.
+
+### Hardened against malformed tool metadata
+
+The same class of bug found in [mcp-fuzz's generator](https://github.com/vishalhabib99/mcp-fuzz) — prompted by [a dev.to comment](https://dev.to/vishalhabib99/i-built-three-tools-to-audit-mcp-servers-each-one-found-a-bug-in-itself-first-5dlc) pointing out that nothing tested the auditor's own robustness to bad `tools/list` metadata, only the target server's tool-call handling — turned out to exist here too, since both tools generate arguments from the same kind of schema. Hand-fed adversarial metadata crashed this module three ways: `properties` (or the whole schema) coming back as a non-object, and a schema nested a few thousand levels deep (`RecursionError`). A fourth case, `required` as a string instead of a list, didn't crash but silently mismatched via substring containment — arguably worse, since it looks like it worked. Fixed the same way as mcp-fuzz: type guards before every `.items()`/membership check, plus a 50-level depth cap. 4 new regression tests (33 total).
 
 ## Known limitations
 

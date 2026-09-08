@@ -10,6 +10,13 @@ plausibly reference "test" back, but it very well might reference "Paris".
 Still schema-only and heuristic, not LLM-generated — no guarantee a given
 server actually has a matching real "Paris", just a more realistic prior
 than a bare placeholder.
+
+A schema here comes straight off the wire from `tools/list` on whatever
+server is being checked — nothing guarantees it's well-formed. See
+mcp-fuzz's generator.py for the sibling tool's version of this same
+hardening (found via the same real class of malformed metadata: non-dict
+`properties`/schema, and schemas nested deep enough to blow Python's
+recursion limit) — this module needed the identical fix.
 """
 
 from __future__ import annotations
@@ -17,6 +24,8 @@ from __future__ import annotations
 import datetime
 import re
 from typing import Any
+
+_MAX_SCHEMA_DEPTH = 50
 
 _NAME_HINTS: list[tuple[tuple[str, ...], Any]] = [
     (("email",), "jane.doe@example.com"),
@@ -56,7 +65,17 @@ def _realistic_string(prop_name: str) -> str:
     return f"example {prop_name.replace('_', ' ')}".strip()
 
 
-def _value_for_schema(prop_name: str, schema: dict) -> Any:
+def _value_for_schema(prop_name: str, schema: dict, _depth: int = 0) -> Any:
+    if not isinstance(schema, dict):
+        # Malformed metadata (e.g. a property's schema fragment isn't an
+        # object at all) — nothing to infer from it, same fallback as no
+        # usable type info below.
+        return _realistic_string(prop_name)
+    if _depth > _MAX_SCHEMA_DEPTH:
+        # Guards against a schema nested deep enough to blow Python's
+        # recursion limit — no real tool schema goes anywhere near this,
+        # only a malformed or adversarial one would.
+        return _realistic_string(prop_name)
     if "enum" in schema and schema["enum"]:
         return schema["enum"][0]
     if "const" in schema:
@@ -91,19 +110,31 @@ def _value_for_schema(prop_name: str, schema: dict) -> Any:
         return True
     if json_type == "array":
         item_schema = schema.get("items", {"type": "string"})
-        return [_value_for_schema(prop_name, item_schema)]
+        return [_value_for_schema(prop_name, item_schema, _depth + 1)]
     if json_type == "object":
-        return _object_value(schema)
+        return _object_value(schema, _depth + 1)
     # No usable type info (bare {}, ambiguous anyOf/oneOf, ...): fall back to
     # a realistic string rather than guessing at a structure we can't infer.
     return _realistic_string(prop_name)
 
 
-def _object_value(schema: dict) -> dict:
+def _object_value(schema: dict, _depth: int = 0) -> dict:
+    if _depth > _MAX_SCHEMA_DEPTH:
+        return {}
     properties = schema.get("properties", {})
+    if not isinstance(properties, dict):
+        # A server returning `properties` as something other than an
+        # object is malformed metadata, not a real schema — nothing to
+        # generate from it, same as no properties at all.
+        properties = {}
     required = schema.get("required", list(properties.keys()))
+    if not isinstance(required, list):
+        # Malformed `required` (e.g. a bare string): `name in required`
+        # would silently do substring matching instead of raising, which
+        # is worse than a crash — treat it the same as "nothing required".
+        required = []
     return {
-        name: _value_for_schema(name, prop_schema)
+        name: _value_for_schema(name, prop_schema, _depth + 1)
         for name, prop_schema in properties.items()
         if name in required
     }
@@ -115,7 +146,7 @@ def generate_realistic_arguments(input_schema: dict | None) -> dict:
     but biases string values toward plausible content instead of a bare
     placeholder, since the whole point here is judging whether the response
     is a genuine answer."""
-    if not input_schema:
+    if not isinstance(input_schema, dict):
         return {}
     return _object_value(input_schema)
 

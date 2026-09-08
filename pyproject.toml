@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mcp-reality-check"
-version = "0.1.0"
+version = "0.1.1"
 description = "Checks whether an MCP server's successful tool responses actually reflect reality: no disguised refusals, no empty content, no output that ignores the schema it declared."
 readme = "README.md"
 license = "MIT"
