@@ -2,6 +2,10 @@
 
 Checks whether an [MCP](https://modelcontextprotocol.io) server's *successful* tool responses actually reflect reality.
 
+![mcp-reality-check run against the official @modelcontextprotocol/server-memory reference server: Response sanity 100% (A), 9/9 tools tested, all ok](docs/demo.png)
+
+*Real output from a live `--include-destructive` run against the official [`@modelcontextprotocol/server-memory`](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) reference server — not a synthetic example.*
+
 [`mcp-doctor`](https://github.com/vishalhabib99/mcp-doctor) reads a server's source and never runs it. [`mcp-fuzz`](https://github.com/vishalhabib99/mcp-fuzz) runs it, but only judges the *bad*-input path — does a missing or wrong-typed field come back as a structured error, or does the server crash? It explicitly declines to judge a *successful* call's content, since a schema-only placeholder value (`"test"`) usually isn't realistic enough to fairly judge whether the response is actually correct.
 
 `mcp-reality-check` is the piece that was missing: it calls each tool once with a best-effort *realistic* input, then checks whether the response is a genuine answer — not a disguised refusal, not empty, not silently violating the tool's own declared output schema.
