@@ -98,3 +98,53 @@ def test_report_scores_only_the_checkable_tools(raw_report):
     assert report.flagged_count == 2  # secretly_refuses + returns_empty
     assert report.sanity_percent == 50.0
     assert report.grade == "D"
+
+
+ENV_REQUIRED_SERVER = str(Path(__file__).parent / "fixtures" / "env_required_server.py")
+
+
+def test_env_kwarg_is_passed_through_to_the_target_server():
+    # Found via real dogfooding, not speculatively: sooperset/mcp-atlassian
+    # (5.9k stars) registers zero tools without JIRA_*/CONFLUENCE_* config,
+    # and this CLI had no way to supply it at all until now — mcp-fuzz
+    # already solved the identical problem for brave-search-mcp-server.
+    import asyncio
+
+    report = asyncio.run(run_reality_check(
+        sys.executable, [ENV_REQUIRED_SERVER],
+        env={"REQUIRED_TEST_KEY": "expected-value"}, timeout=TIMEOUT,
+    ))
+    assert report.connect_error is None
+
+
+def test_no_env_kwarg_does_not_leak_or_guess_the_required_value():
+    # Without an explicit env, the server must NOT start — confirms this
+    # isn't accidentally inheriting the operator's full shell environment
+    # (a real secret-leaking regression), only the SDK's own minimal safe
+    # default (PATH, HOME, ...).
+    import asyncio
+
+    report = asyncio.run(run_reality_check(sys.executable, [ENV_REQUIRED_SERVER], timeout=TIMEOUT))
+    assert report.connect_error is not None
+
+
+def test_env_kwarg_merges_onto_safe_defaults_rather_than_replacing_them():
+    # A caller passing one custom var must not lose PATH/HOME in the
+    # process — verified against a real failure mode: passing only an API
+    # key with no PATH would break the interpreter/npx itself before the
+    # target server ever runs.
+    from mcp.client.stdio import get_default_environment
+
+    from mcp_reality_check.engine import _merged_env
+
+    merged = _merged_env({"SOME_API_KEY": "x"})
+    assert merged["SOME_API_KEY"] == "x"
+    for key in get_default_environment():
+        assert key in merged
+
+
+def test_no_env_is_passed_through_unchanged():
+    from mcp_reality_check.engine import _merged_env
+
+    assert _merged_env(None) is None
+    assert _merged_env({}) == {}

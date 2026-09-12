@@ -31,6 +31,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS, help="Per-call timeout in seconds."
     )
     parser.add_argument(
+        "--env", action="append", default=[], metavar="KEY=VALUE",
+        help="pass an environment variable through to the target server (repeatable), e.g. "
+        "--env BRAVE_API_KEY=... . Without this, only a safe minimal set (PATH, HOME, ...) "
+        "is inherited — many real servers need an API key to start at all.",
+    )
+    parser.add_argument(
         "command",
         nargs=argparse.REMAINDER,
         help="Command to launch the target MCP server, e.g. -- python server.py",
@@ -47,8 +53,16 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv if argv is not None else sys.argv[1:])
     command, *rest = args.command
 
+    env = {}
+    for pair in args.env:
+        key, sep, value = pair.partition("=")
+        if not sep:
+            print(f"error: --env expects KEY=VALUE, got {pair!r}", file=sys.stderr)
+            return 2
+        env[key] = value
+
     raw = asyncio.run(run_reality_check(
-        command, rest, include_destructive=args.include_destructive, timeout=args.timeout
+        command, rest, env=env or None, include_destructive=args.include_destructive, timeout=args.timeout
     ))
     report = build_report(raw)
 
