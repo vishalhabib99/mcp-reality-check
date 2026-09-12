@@ -24,7 +24,7 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 
 from mcp import ClientSession, StdioServerParameters, types
-from mcp.client.stdio import stdio_client
+from mcp.client.stdio import get_default_environment, stdio_client
 
 from mcp_reality_check.checks import (
     SanityResult,
@@ -92,6 +92,24 @@ def _is_read_only(tool: types.Tool) -> bool:
     return _field(annotations, "read_only_hint", "readOnlyHint") is True
 
 
+def _merged_env(env: dict[str, str] | None) -> dict[str, str] | None:
+    """`StdioServerParameters(env=None)` doesn't inherit the operator's shell
+    — the SDK's own `stdio_client` deliberately falls back to a minimal safe
+    allowlist (PATH, HOME, ...), never arbitrary app-specific vars, as a real
+    security default against leaking secrets into a launched server. Mirrors
+    mcp-fuzz's identical helper exactly: a caller that *does* pass `env`
+    almost always means "also set this one API key", not "replace PATH/HOME
+    entirely" — merge onto the same safe baseline the SDK already uses when
+    `env` is left unset, rather than replacing it. Found missing here via
+    real dogfooding, not speculatively: mcp-reality-check had the engine-level
+    `env` parameter all along but no CLI flag to ever populate it, so it
+    silently couldn't test any server that needs a var to even start (e.g.
+    `sooperset/mcp-atlassian`, which registers zero tools without Jira/
+    Confluence config) — a real capability gap mcp-fuzz already closed for
+    itself but this sibling tool never got."""
+    return {**get_default_environment(), **env} if env else env
+
+
 async def run_reality_check(
     command: str,
     args: list[str] | None = None,
@@ -100,7 +118,8 @@ async def run_reality_check(
     include_destructive: bool = False,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> RealityCheckReport:
-    params = StdioServerParameters(command=command, args=args or [], env=env, cwd=cwd)
+    merged_env = _merged_env(env)
+    params = StdioServerParameters(command=command, args=args or [], env=merged_env, cwd=cwd)
     server_label = " ".join([command, *(args or [])])
     report = RealityCheckReport(server_command=server_label)
 
