@@ -50,6 +50,8 @@ mcp-reality-check --json -- python server.py
 mcp-reality-check --fail-under 90 -- python server.py   # non-zero exit if sanity < 90%
 ```
 
+Want this alongside mcp-doctor's static checks and mcp-fuzz's crash-resilience checks in one PR comment instead of three? [`mcp-trust-check`](https://github.com/vishalhabib99/mcp-trust-check) is a single GitHub Action that runs all three and posts one combined score.
+
 ## Real-world spot check
 
 | Repo | Lang | What mcp-reality-check found |
