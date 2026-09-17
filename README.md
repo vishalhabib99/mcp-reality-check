@@ -39,9 +39,28 @@ For each tool (read-only by default — see Safety below), `mcp-reality-check` g
 
 A tool that itself honestly reports `isError: true` is never flagged — it's already telling the truth about failing, which is the opposite of a disguised failure.
 
+## Runtime gate — use it live, not just as a batch audit
+
+Everything above runs once, offline, against synthetic-but-realistic arguments, to produce a report. `guarded_call` is the same checks applied to one real call an agent actually makes, with the agent's own real arguments — call-time instead of audit-time:
+
+```python
+from mcp_reality_check.gate import guarded_call
+
+# in place of a bare `await session.call_tool(tool.name, arguments)`:
+result = await guarded_call(session, tool, arguments)
+
+if result.outcome != "ok":
+    ...  # crashed or timed out — no response to trust
+elif result.flagged:
+    ...  # a real response came back, but it's a disguised refusal,
+         # empty content, or violates the tool's own output schema
+```
+
+This is deliberately scoped to *correctness*, not *security* — is the response real, not is it safe. There's already good, actively-maintained tooling in the runtime-security-proxy space (secrets in transit, prompt-injection markers, destructive-command policy, taint tracking) — this doesn't compete with that and isn't trying to. It answers the question those tools don't: a tool call can be perfectly safe and still lie about what it did.
+
 ## Safety
 
-Same default as `mcp-fuzz`: only tools annotated `readOnlyHint: true` are called. Pass `--include-destructive` to test everything, but only against a server you're confident is safe to call blindly.
+Same default as `mcp-fuzz`: only tools annotated `readOnlyHint: true` are called. Pass `--include-destructive` to test everything, but only against a server you're confident is safe to call blindly. `guarded_call` has no opinion on this — the agent decides which real calls to make; the gate only judges the response.
 
 ## JSON output / CI
 

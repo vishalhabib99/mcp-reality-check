@@ -27,12 +27,13 @@ def _result(raw_report, name):
     return next(r for r in raw_report.results if r.tool_name == name)
 
 
-def test_connects_and_lists_all_six_tools(raw_report):
+def test_connects_and_lists_all_eight_tools(raw_report):
     assert raw_report.connect_error is None
     names = {r.tool_name for r in raw_report.results}
     assert names == {
         "well_behaved", "secretly_refuses", "returns_empty",
         "genuinely_fails", "no_string_args", "delete_everything",
+        "kills_process", "hangs_forever",
     }
 
 
@@ -89,10 +90,12 @@ def test_tool_with_no_string_args_has_no_echo_check(raw_report):
 
 def test_report_scores_only_the_checkable_tools(raw_report):
     report = build_report(raw_report)
-    # 6 tools total: 1 skipped (not read-only), 1 honest failure (not
-    # checkable), leaving 4 checkable — well_behaved, secretly_refuses,
-    # returns_empty, no_string_args.
-    assert report.tested_count == 5
+    # 8 tools total: 1 skipped (not read-only), 3 tested-but-not-checkable
+    # (genuinely_fails' honest isError=true, plus kills_process/hangs_forever
+    # failing before a response was ever available — gate.py's job, not this
+    # batch-audit engine's, to classify those two further), leaving 4
+    # checkable — well_behaved, secretly_refuses, returns_empty, no_string_args.
+    assert report.tested_count == 7
     assert report.skipped_count == 1
     assert report.checkable_count == 4
     assert report.flagged_count == 2  # secretly_refuses + returns_empty

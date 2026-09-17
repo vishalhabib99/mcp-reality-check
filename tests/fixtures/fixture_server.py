@@ -9,6 +9,8 @@ the installed package, not assumed from older examples.
 
 from __future__ import annotations
 
+import time
+
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
@@ -55,6 +57,26 @@ def no_string_args(count: int) -> str:
 def delete_everything(target: str) -> str:
     """A destructive tool that should be skipped by default."""
     return f"deleted {target}"
+
+
+@server.tool(annotations=READ_ONLY)
+def kills_process(x: str) -> str:
+    """os._exit terminates the process immediately, bypassing all Python
+    exception handling — a real process crash, not an SDK-caught error, to
+    verify the live gate's crash classification against something that
+    actually kills the connection. Same fixture pattern as mcp-fuzz's
+    identical tool."""
+    import os
+
+    os._exit(1)
+
+
+@server.tool(annotations=READ_ONLY)
+def hangs_forever(x: str) -> str:
+    """Never returns — simulates a tool call the gate must time out on
+    rather than hang forever waiting for."""
+    time.sleep(3600)
+    return x
 
 
 if __name__ == "__main__":
