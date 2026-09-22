@@ -1,6 +1,7 @@
-"""Connects to a real, running MCP server over stdio, calls each tool once
-with realistic-looking valid arguments, and checks whether the response is
-a genuine answer — not just structurally well-formed.
+"""Connects to a real, running MCP server — over stdio (a launched local
+command) or Streamable HTTP (a remote URL) — calls each tool once with
+realistic-looking valid arguments, and checks whether the response is a
+genuine answer — not just structurally well-formed.
 
 mcp-doctor reads a server's source and never runs it. mcp-fuzz runs it, but
 only judges the *bad*-input path (does it crash?) — it explicitly declines
@@ -25,6 +26,7 @@ from dataclasses import dataclass, field
 
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import get_default_environment, stdio_client
+from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
 
 from mcp_reality_check.checks import (
     SanityResult,
@@ -44,19 +46,53 @@ class RealityCheckReport:
     server_command: str
     results: list[SanityResult] = field(default_factory=list)
     connect_error: str | None = None
+    # Set when a tool call's failure was bad enough that the follow-up
+    # reconnect itself failed — meaning the server is genuinely gone, not
+    # just that one call. Distinct from connect_error, which means the
+    # *initial* connection never succeeded. See _try_reconnect.
+    terminated_early: str | None = None
+
+
+@dataclass
+class HttpTarget:
+    """A remote MCP server reached over Streamable HTTP instead of a local
+    launchable stdio command — mirrors mcp-fuzz's identical type. `headers`
+    carries auth (a bearer token, an API key header) the same way `--env`
+    carries one into a launched stdio process."""
+
+    url: str
+    headers: dict[str, str] | None = None
+
+
+# Either transport the spec allows: a local command this tool launches and
+# owns the lifecycle of, or a remote endpoint it only ever connects to.
+ConnectionTarget = StdioServerParameters | HttpTarget
 
 
 class _ServerConnection:
-    def __init__(self, params: StdioServerParameters):
-        self._params = params
+    def __init__(self, target: ConnectionTarget):
+        self._target = target
         self._stack: AsyncExitStack | None = None
         self.session: ClientSession | None = None
+        # See mcp-fuzz's identical field: set once a reconnect-after-failure
+        # attempt itself fails, meaning the server is genuinely gone — the
+        # expected outcome the moment a tool kills the process behind an
+        # HttpTarget, since this tool has no way to relaunch a remote
+        # service it doesn't own (unlike a stdio subprocess, which usually
+        # can be relaunched).
+        self.unreachable = False
 
     async def connect(self) -> None:
         await self.close()
         stack = AsyncExitStack()
         try:
-            read, write = await stack.enter_async_context(stdio_client(self._params))
+            if isinstance(self._target, HttpTarget):
+                http_client = create_mcp_http_client(headers=self._target.headers)
+                read, write = await stack.enter_async_context(
+                    streamable_http_client(self._target.url, http_client=http_client)
+                )
+            else:
+                read, write = await stack.enter_async_context(stdio_client(self._target))
             session = await stack.enter_async_context(ClientSession(read, write))
             await session.initialize()
         except BaseException:
@@ -64,6 +100,7 @@ class _ServerConnection:
             raise
         self._stack = stack
         self.session = session
+        self.unreachable = False
 
     async def close(self) -> None:
         if self._stack is not None:
@@ -73,6 +110,17 @@ class _ServerConnection:
                 pass
         self._stack = None
         self.session = None
+
+
+async def _try_reconnect(conn: _ServerConnection) -> None:
+    """Reconnect after a failed call, tolerant of the reconnect itself
+    failing — see mcp-fuzz's identical helper for the full rationale (an
+    unrecoverable reconnect used to propagate straight out of
+    run_reality_check, crashing the whole run instead of being reported)."""
+    try:
+        await conn.connect()
+    except Exception:
+        conn.unreachable = True
 
 
 def _field(model, snake_name: str, camel_name: str):
@@ -111,16 +159,28 @@ def _merged_env(env: dict[str, str] | None) -> dict[str, str] | None:
 
 
 async def run_reality_check(
-    command: str,
+    command: str | None = None,
     args: list[str] | None = None,
     env: dict[str, str] | None = None,
     cwd: str | None = None,
+    url: str | None = None,
+    headers: dict[str, str] | None = None,
     include_destructive: bool = False,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> RealityCheckReport:
-    merged_env = _merged_env(env)
-    params = StdioServerParameters(command=command, args=args or [], env=merged_env, cwd=cwd)
-    server_label = " ".join([command, *(args or [])])
+    # Exactly one transport: a local command to launch, or a remote URL to
+    # connect to — mirrors mcp-fuzz's identical validation.
+    if (command is None) == (url is None):
+        raise ValueError("exactly one of `command` or `url` must be given")
+
+    params: ConnectionTarget
+    if url is not None:
+        params = HttpTarget(url=url, headers=headers)
+        server_label = url
+    else:
+        merged_env = _merged_env(env)
+        params = StdioServerParameters(command=command, args=args or [], env=merged_env, cwd=cwd)
+        server_label = " ".join([command, *(args or [])])
     report = RealityCheckReport(server_command=server_label)
 
     conn = _ServerConnection(params)
@@ -139,6 +199,14 @@ async def run_reality_check(
         return report
 
     for tool in tools_result.tools:
+        if conn.unreachable:
+            report.results.append(SanityResult(
+                tool_name=tool.name,
+                tested=False,
+                skip_reason=f"server became unreachable mid-run ({report.terminated_early})",
+            ))
+            continue
+
         if not include_destructive and not _is_read_only(tool):
             report.results.append(SanityResult(
                 tool_name=tool.name,
@@ -163,7 +231,12 @@ async def run_reality_check(
             # than duplicating mcp-fuzz's crash-vs-graceful-error logic
             # here; a tool that can't even complete a plausible call has
             # nothing for the content checks below to examine anyway.
-            await conn.connect()
+            await _try_reconnect(conn)
+            if conn.unreachable and report.terminated_early is None:
+                report.terminated_early = (
+                    f"tool {tool.name!r} failed and the reconnect itself failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
             report.results.append(SanityResult(
                 tool_name=tool.name,
                 tested=True,

@@ -34,6 +34,7 @@ class ToolReport:
 class Report:
     server_command: str
     connect_error: str | None
+    terminated_early: str | None
     tools: list[ToolReport]
     tested_count: int
     skipped_count: int
@@ -101,6 +102,7 @@ def build_report(raw: RealityCheckReport) -> Report:
     return Report(
         server_command=raw.server_command,
         connect_error=raw.connect_error,
+        terminated_early=raw.terminated_early,
         tools=tool_reports,
         tested_count=tested_count,
         skipped_count=skipped_count,
@@ -118,6 +120,8 @@ def render_text(report: Report) -> str:
         return "\n".join(lines)
 
     lines.append(f"mcp-reality-check: {report.server_command}")
+    if report.terminated_early:
+        lines.append(f"WARNING: run ended early — {report.terminated_early}")
     lines.append("")
     if report.sanity_percent is not None:
         lines.append(
@@ -160,6 +164,7 @@ def to_dict(report: Report) -> dict:
     return {
         "server_command": report.server_command,
         "connect_error": report.connect_error,
+        "terminated_early": report.terminated_early,
         "tested_count": report.tested_count,
         "skipped_count": report.skipped_count,
         "checkable_count": report.checkable_count,

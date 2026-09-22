@@ -103,6 +103,107 @@ def test_report_scores_only_the_checkable_tools(raw_report):
     assert report.grade == "D"
 
 
+def test_stdio_recovers_from_kills_process_without_terminating_early(raw_report):
+    # A stdio target's crashed subprocess is almost always relaunchable —
+    # contrast with test_http_target_reports_terminated_early_after_
+    # unrecoverable_crash below, where the same tool's crash *is*
+    # unrecoverable over HTTP (mirrors mcp-fuzz's identical pair of tests).
+    assert raw_report.terminated_early is None
+
+
+# --- HttpTarget: the same fixture server, over Streamable HTTP instead of
+# stdio — see mcp-fuzz's identical tests for the full rationale. Launches
+# the fixture as its own subprocess and owns that subprocess's lifecycle.
+import os
+import socket
+import subprocess
+import time
+import urllib.error
+import urllib.request
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+@pytest.fixture(scope="module")
+def http_raw_report():
+    import asyncio
+
+    from mcp_reality_check.engine import run_reality_check as _run_reality_check
+
+    port = _free_port()
+    url = f"http://127.0.0.1:{port}/mcp"
+    env = {**os.environ, "FIXTURE_TRANSPORT": "streamable-http", "FIXTURE_PORT": str(port)}
+    proc = subprocess.Popen([sys.executable, FIXTURE_SERVER], env=env)
+    try:
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            try:
+                urllib.request.urlopen(url, timeout=0.5)
+            except urllib.error.HTTPError:
+                break
+            except (urllib.error.URLError, ConnectionError):
+                time.sleep(0.1)
+                continue
+            else:
+                break
+        report = asyncio.run(_run_reality_check(url=url, timeout=TIMEOUT))
+    finally:
+        proc.terminate()
+        proc.wait(timeout=5)
+    return report
+
+
+def test_http_target_connects_and_lists_tools(http_raw_report):
+    assert http_raw_report.connect_error is None
+    names = {r.tool_name for r in http_raw_report.results}
+    assert "well_behaved" in names
+    assert "secretly_refuses" in names
+
+
+def test_http_target_classifies_real_behavior_same_as_stdio(http_raw_report):
+    well_behaved = _result(http_raw_report, "well_behaved")
+    assert well_behaved.tested is True
+    assert well_behaved.refusal_in_disguise is None
+
+    refuses = _result(http_raw_report, "secretly_refuses")
+    assert refuses.refusal_in_disguise is not None
+
+
+def test_http_target_reports_terminated_early_after_unrecoverable_crash(http_raw_report):
+    # kills_process calls os._exit() — fatal over HTTP specifically, since
+    # this tool doesn't own the remote server process and has no way to
+    # relaunch it.
+    assert http_raw_report.terminated_early is not None
+    assert "kills_process" in http_raw_report.terminated_early
+    skipped_after = [
+        r for r in http_raw_report.results
+        if not r.tested and r.skip_reason and "unreachable" in r.skip_reason
+    ]
+    assert len(skipped_after) > 0
+
+
+def test_url_and_command_both_given_raises():
+    import asyncio
+
+    from mcp_reality_check.engine import run_reality_check as _run_reality_check
+
+    with pytest.raises(ValueError):
+        asyncio.run(_run_reality_check(command=sys.executable, url="http://127.0.0.1:1/mcp"))
+
+
+def test_neither_url_nor_command_given_raises():
+    import asyncio
+
+    from mcp_reality_check.engine import run_reality_check as _run_reality_check
+
+    with pytest.raises(ValueError):
+        asyncio.run(_run_reality_check())
+
+
 ENV_REQUIRED_SERVER = str(Path(__file__).parent / "fixtures" / "env_required_server.py")
 
 

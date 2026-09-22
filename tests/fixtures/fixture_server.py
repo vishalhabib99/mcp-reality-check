@@ -80,4 +80,12 @@ def hangs_forever(x: str) -> str:
 
 
 if __name__ == "__main__":
-    server.run(transport="stdio")
+    # FIXTURE_TRANSPORT lets the same fixture be exercised over Streamable
+    # HTTP too — see test_engine.py's HttpTarget tests, mirroring mcp-fuzz's
+    # identical toggle in its own fixture_server.py.
+    import os
+
+    if os.environ.get("FIXTURE_TRANSPORT") == "streamable-http":
+        server.run(transport="streamable-http", port=int(os.environ["FIXTURE_PORT"]))
+    else:
+        server.run(transport="stdio")

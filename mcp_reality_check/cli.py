@@ -37,33 +37,66 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "is inherited — many real servers need an API key to start at all.",
     )
     parser.add_argument(
+        "--url", default=None,
+        help="connect to a remote MCP server over Streamable HTTP at this URL instead of "
+        "launching a local stdio command, e.g. `mcp-reality-check --url https://example.com/mcp`. "
+        "Mutually exclusive with the `-- <command>` form.",
+    )
+    parser.add_argument(
+        "--header", action="append", default=[], metavar="KEY=VALUE",
+        help="pass an HTTP header on every request to --url (repeatable), e.g. "
+        "--header 'Authorization=Bearer ...' — the --url equivalent of --env for a stdio "
+        "command. Only valid with --url.",
+    )
+    parser.add_argument(
         "command",
         nargs=argparse.REMAINDER,
-        help="Command to launch the target MCP server, e.g. -- python server.py",
+        help="Command to launch the target MCP server, e.g. -- python server.py. "
+        "Mutually exclusive with --url — use one or the other.",
     )
     args = parser.parse_args(argv)
     if args.command and args.command[0] == "--":
         args.command = args.command[1:]
-    if not args.command:
-        parser.error("a target server command is required, e.g. mcp-reality-check -- python server.py")
+    if args.url and args.command:
+        parser.error("--url and a launch command are mutually exclusive — use one or the other")
+    if not args.url and not args.command:
+        parser.error("a target server command is required, e.g. mcp-reality-check -- python server.py, or use --url for a remote server")
+    if args.header and not args.url:
+        parser.error("--header requires --url")
+    if args.env and args.url:
+        parser.error("--env requires a launch command, not --url — use --header for a remote server's auth")
     return args
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv if argv is not None else sys.argv[1:])
-    command, *rest = args.command
 
-    env = {}
-    for pair in args.env:
-        key, sep, value = pair.partition("=")
-        if not sep:
-            print(f"error: --env expects KEY=VALUE, got {pair!r}", file=sys.stderr)
-            return 2
-        env[key] = value
+    if args.url:
+        headers = {}
+        for pair in args.header:
+            key, sep, value = pair.partition("=")
+            if not sep:
+                print(f"error: --header expects KEY=VALUE, got {pair!r}", file=sys.stderr)
+                return 2
+            headers[key] = value
+        raw = asyncio.run(run_reality_check(
+            url=args.url, headers=headers or None,
+            include_destructive=args.include_destructive, timeout=args.timeout,
+        ))
+    else:
+        command, *rest = args.command
 
-    raw = asyncio.run(run_reality_check(
-        command, rest, env=env or None, include_destructive=args.include_destructive, timeout=args.timeout
-    ))
+        env = {}
+        for pair in args.env:
+            key, sep, value = pair.partition("=")
+            if not sep:
+                print(f"error: --env expects KEY=VALUE, got {pair!r}", file=sys.stderr)
+                return 2
+            env[key] = value
+
+        raw = asyncio.run(run_reality_check(
+            command, rest, env=env or None, include_destructive=args.include_destructive, timeout=args.timeout
+        ))
     report = build_report(raw)
 
     if args.json:
