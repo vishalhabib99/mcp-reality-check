@@ -30,10 +30,12 @@ import jsonschema
 _REFUSAL_PATTERNS = [
     r"\bi (?:can(?:not|'t)|am unable to|'m unable to|do not have access|don't have access|"
     r"am not able to|'m not able to|don't have the ability|do not have the ability)\b",
-    r"\bas an ai\b",
+    # "As an AI," / "As an AI language model," - not "as an AI Product Manager".
+    r"\bas an ai(?: (?:language )?model| assistant)?,",
     r"\bi'm sorry, but\b",
     r"\bunfortunately,? i (?:cannot|can't|am unable|don't|do not)\b",
-    r"\bno access to\b",
+    # "I have no access to" - not prose like "an agent has no access to server source".
+    r"\bi(?: have|'ve| had) no access to\b",
     r"\bnot authorized to\b",
     r"\bunable to (?:process|complete|fulfill) this request\b",
     r"\bi don't have (?:the )?(?:permission|access|ability) to\b",
@@ -62,9 +64,16 @@ def response_text_from_content(content_blocks: list) -> str:
     return "\n".join(texts)
 
 
+# A disguised refusal IS the answer, so it shows up at the start of the response. A phrase deep
+# inside a long response is a document quoting one (a README describing refusals, a transcript),
+# and flagging it turned every file-reading tool into a false positive. 200 chars leaves room for
+# a short preamble or a JSON wrapper like {"result": "I'm sorry, but ..."}.
+REFUSAL_WINDOW_CHARS = 200
+
+
 def check_refusal_in_disguise(response_text: str) -> str | None:
-    match = _REFUSAL_RE.search(response_text)
-    return match.group(0) if match else None
+    match = _REFUSAL_RE.search(response_text.lstrip())
+    return match.group(0) if match and match.start() < REFUSAL_WINDOW_CHARS else None
 
 
 def check_empty_content(response_text: str) -> bool:

@@ -55,3 +55,21 @@ def test_output_schema_catches_a_real_violation():
 def test_output_schema_passes_a_matching_response():
     schema = {"type": "object", "properties": {"count": {"type": "integer"}}, "required": ["count"]}
     assert check_output_schema({"count": 3}, schema) is None
+
+
+def test_refusal_must_be_the_answer_not_a_quote_deep_in_a_document():
+    # Found by reading real READMEs through server-filesystem: a document that *mentions* a
+    # refusal phrase was flagged as a disguised refusal. Over ~/code (12,445 text files) the
+    # old check flagged 38 files; with the 200-char window and tightened phrases, 0.
+    readme = "# Project\n\n" + "Plain documentation. " * 300 + 'refusals look like "I don\'t have access to..."'
+    assert check_refusal_in_disguise(readme) is None
+    assert check_refusal_in_disguise('{"result": "I\'m sorry, but I can\'t provide that."}') is not None
+    long_refusal = "I'm sorry, but I can't provide that. " + "Here is why. " * 100
+    assert check_refusal_in_disguise(long_refusal) is not None
+
+
+def test_tightened_phrases_skip_ordinary_prose():
+    assert check_refusal_in_disguise("Structured record of work as an AI Product Manager.") is None
+    assert check_refusal_in_disguise("An agent has no access to server source, only metadata.") is None
+    assert check_refusal_in_disguise("As an AI language model, I cannot browse the internet.") is not None
+    assert check_refusal_in_disguise("I have no access to the user's calendar.") is not None

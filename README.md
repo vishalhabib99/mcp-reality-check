@@ -117,6 +117,7 @@ The same class of bug found in [mcp-fuzz's generator](https://github.com/vishalh
 
 ## Known limitations
 
+- A disguised refusal has to start within the first 200 characters of the response, since a refusal *is* the answer. A phrase deeper in a long response is treated as a document quoting one. Added in 0.4.1 after reading real READMEs through `server-filesystem` flagged documentation as refusals. Over 12,445 real text files, flagged files went from 38 to 0, and all 12 refusal samples in the test set are still caught.
 - The refusal-pattern list is a fixed set of common phrasings, not exhaustive — a model-specific or oddly-worded refusal can slip through uncaught. Patterns are deliberately conservative (full phrases, not single words like "sorry") to avoid false-flagging a genuine answer that happens to apologize for something unrelated.
 - The echo/relevance check is a substring match, not semantic understanding — it can't tell a correct paraphrase from an actually-wrong answer. That's exactly why it's reported separately and never scored.
 - Output schema validation only fires when a server actually declares one — most MCP servers today don't yet.
