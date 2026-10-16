@@ -1,6 +1,6 @@
 # mcp-reality-check
 
-> **Moved into [mcp-doctor](https://github.com/vishalhabib99/mcp-doctor).** The refusal, empty-content and output-schema checks now run on every real tool call in [`mcp-doctor guard`](https://github.com/vishalhabib99/mcp-doctor#guard--catch-tool-calls-that-report-success-but-didnt-work) (`pip install mcp-server-lint`), alongside checks for writes that didn't happen, dropped arguments and prompt-injection leaks. This package keeps working, but new work goes to mcp-doctor.
+> **Moved into [mcp-doctor](https://github.com/vishalhabib99/mcp-doctor).** The refusal, empty-content and output-schema checks now run on every real tool call in [`mcp-doctor guard`](https://github.com/vishalhabib99/mcp-doctor#guard--catch-tool-calls-that-report-success-but-didnt-work) (`pip install mcp-server-lint`), alongside checks for writes that didn't happen, dropped arguments and prompt-injection leaks. The one-shot batch audit is `mcp-doctor fuzz --truth -- python server.py` since [v1.25.0](https://github.com/vishalhabib99/mcp-doctor#fuzz-and-verdict--launch-the-server-and-check-it) (`pip install 'mcp-server-lint[runtime]'`). This package keeps working, but new work goes to mcp-doctor.
 
 Checks whether an [MCP](https://modelcontextprotocol.io) server's *successful* tool responses actually reflect reality.
 
